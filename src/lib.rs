@@ -104,7 +104,7 @@ impl FermiCode {
         cr: Orbital,
         an: Orbital,
     ) -> Option<Self> {
-        (cr.h() <= an.h()).then(|| FermiCode::One {
+        (cr.h() <= an.h()).then_some(FermiCode::One {
             cr,
             an,
         })
@@ -115,7 +115,7 @@ impl FermiCode {
         an: (Orbital, Orbital),
     ) -> Option<Self> {
         (cr.0.h() < cr.1.h() && an.0.h() > an.1.h() && cr.0.h() <= an.1.h())
-            .then(|| FermiCode::Two {
+            .then_some(FermiCode::Two {
                 cr,
                 an,
             })
@@ -175,11 +175,20 @@ impl From<&[Pauli]> for PauliCode {
 }
 
 #[derive(Debug)]
-pub struct Hamiltonian<K, T> {
+pub struct Hamil<T, K> {
     terms: HashMap<K, T>,
 }
 
-impl<K, T> Hamiltonian<K, T>
+impl<T, K> Default for Hamil<T, K>
+where
+    K: Hash + Eq,
+{
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<T, K> Hamil<T, K>
 where
     K: Hash + Eq,
 {
@@ -198,7 +207,7 @@ where
     }
 }
 
-impl<K, T> Hamiltonian<K, T>
+impl<T, K> Hamil<T, K>
 where
     T: AddAssign + Copy,
     K: Hash + Eq,
@@ -215,8 +224,8 @@ where
     }
 }
 
-pub type FermiHamil<T> = Hamiltonian<FermiCode, T>;
-pub type PauliHamil<T> = Hamiltonian<PauliCode, T>;
+pub type FermiHamil<T> = Hamil<T, FermiCode>;
+pub type PauliHamil<T> = Hamil<T, PauliCode>;
 
 impl<T> From<FermiHamil<T>> for PauliHamil<T>
 where

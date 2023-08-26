@@ -1,4 +1,4 @@
-use fermihamil::{
+use hamil::{
     FermiCode,
     FermiHamil,
     Orbital,

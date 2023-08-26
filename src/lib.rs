@@ -4,18 +4,10 @@ use std::{
         HashMap,
     },
     hash::Hash,
-    ops::{
-        AddAssign,
-        Index,
-        IndexMut,
-    },
+    ops::AddAssign,
 };
 
-use num::{
-    Complex,
-    Float,
-    Num,
-};
+use num::Float;
 
 #[cfg(test)]
 mod tests;
@@ -94,20 +86,7 @@ impl From<(u32, Spin)> for Orbital {
     }
 }
 
-impl From<Orbital> for u32 {
-    fn from(value: Orbital) -> Self {
-        value.h()
-    }
-}
-
-impl From<u32> for Orbital {
-    fn from(value: u32) -> Self {
-        let orbital = value / 2;
-        let spin = Spin::from(value % 2);
-        Self::new(orbital, spin)
-    }
-}
-
+/// FermiCode in canonical ordering
 #[derive(Debug, PartialEq, Clone, Copy, Hash, Eq)]
 pub enum FermiCode {
     One {
@@ -121,151 +100,25 @@ pub enum FermiCode {
 }
 
 impl FermiCode {
-    pub fn canonical(self) -> Self {
-        match self {
-            FermiCode::One { cr, an } => { 
-                if cr.h() <= an.h() {
-                    self
-                } else {
-                    FermiCode::One { an, cr}
-                }
-            }
-            FermiCode::Two { cr, an } => {
-                let 
-            }
-        }
+    pub fn one(
+        cr: Orbital,
+        an: Orbital,
+    ) -> Option<Self> {
+        (cr.h() <= an.h()).then(|| FermiCode::One {
+            cr,
+            an,
+        })
     }
-}
 
-impl From<(Orbital, Orbital)> for FermiCode {
-    fn from(value: (Orbital, Orbital)) -> Self {
-        Self::One {
-            cr: value.0,
-            an: value.1,
-        }
-    }
-}
-
-impl From<(Orbital, Orbital, Orbital, Orbital)> for FermiCode {
-    fn from(value: (Orbital, Orbital, Orbital, Orbital)) -> Self {
-        Self::Two {
-            cr: (value.0, value.1),
-            an: (value.2, value.3),
-        }
-    }
-}
-
-impl FermiCode {
-    pub fn symmetries(self) -> impl Iterator<Item = Self> {
-        ElectronSyms::new(self)
-    }
-}
-
-impl IntoIterator for FermiCode {
-    type IntoIter = ElectronOrbitals;
-    type Item = Orbital;
-
-    fn into_iter(self) -> Self::IntoIter {
-        ElectronOrbitals::new(self)
-    }
-}
-
-#[derive(Debug)]
-pub struct ElectronOrbitals {
-    idx:   FermiCode,
-    count: u8,
-}
-
-impl ElectronOrbitals {
-    pub fn new(idx: FermiCode) -> Self {
-        Self {
-            idx,
-            count: 0,
-        }
-    }
-}
-
-impl Iterator for ElectronOrbitals {
-    type Item = Orbital;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let item = match self.idx {
-            FermiCode::One {
+    pub fn two(
+        cr: (Orbital, Orbital),
+        an: (Orbital, Orbital),
+    ) -> Option<Self> {
+        (cr.0.h() < cr.1.h() && an.0.h() > an.1.h() && cr.0.h() <= an.1.h())
+            .then(|| FermiCode::Two {
                 cr,
                 an,
-            } => match self.count {
-                0 => Some(cr),
-                1 => Some(an),
-                _ => None,
-            },
-            FermiCode::Two {
-                cr,
-                an,
-            } => match self.count {
-                0 => Some(cr.0),
-                1 => Some(cr.1),
-                2 => Some(an.0),
-                3 => Some(an.1),
-                _ => None,
-            },
-        };
-        self.count += 1;
-        if self.count >= 4 {
-            self.count = 4;
-        }
-        item
-    }
-}
-
-#[derive(Debug)]
-pub struct ElectronSyms {
-    idx:   FermiCode,
-    count: u8,
-}
-
-impl ElectronSyms {
-    pub fn new(integral: FermiCode) -> Self {
-        Self {
-            idx:   integral,
-            count: 0,
-        }
-    }
-}
-
-impl Iterator for ElectronSyms {
-    type Item = FermiCode;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let item = match self.idx {
-            FermiCode::One {
-                cr,
-                an,
-            } => match self.count {
-                0 => Some((cr, an).into()),
-                1 => Some((an, cr).into()),
-                _ => None,
-            },
-
-            FermiCode::Two {
-                cr,
-                an,
-            } => match self.count {
-                0 => Some((cr.0, cr.1, an.0, an.1).into()),
-                1 => Some((cr.0, cr.1, an.1, an.0).into()),
-                2 => Some((cr.1, cr.0, an.0, an.1).into()),
-                3 => Some((cr.1, cr.0, an.1, an.0).into()),
-                4 => Some((an.0, an.1, cr.0, cr.1).into()),
-                5 => Some((an.0, an.1, cr.1, cr.0).into()),
-                6 => Some((an.1, an.0, cr.1, cr.0).into()),
-                7 => Some((an.1, an.0, cr.0, cr.1).into()),
-                _ => None,
-            },
-        };
-        self.count += 1;
-        if self.count >= 8 {
-            self.count = 8
-        }
-        item
+            })
     }
 }
 
@@ -291,6 +144,24 @@ impl PauliCode {
     pub fn new() -> Self {
         Self(BTreeMap::new())
     }
+
+    pub fn with_pauli(
+        idx: u32,
+        pauli: Pauli,
+    ) -> Self {
+        let mut code = PauliCode::new();
+        code.0.insert(idx, pauli);
+        code
+    }
+
+    pub fn update(
+        &mut self,
+        idx: u32,
+        pauli: Pauli,
+    ) -> &mut Self {
+        self.0.insert(idx, pauli);
+        self
+    }
 }
 
 impl From<&[Pauli]> for PauliCode {
@@ -303,110 +174,38 @@ impl From<&[Pauli]> for PauliCode {
     }
 }
 
-pub trait Conj {
-    fn conj(self) -> Self;
-}
-
-impl<T> Conj for Complex<T>
-where
-    T: Float,
-{
-    fn conj(self) -> Self {
-        Complex::conj(&self)
-    }
-}
-
-impl Conj for PauliCode {
-    fn conj(self) -> Self {
-        self
-    }
-}
-
-impl Conj for FermiCode {
-    fn conj(self) -> Self {
-        match self {
-            FermiCode::One {
-                cr,
-                an,
-            } => (an, cr).into(),
-            FermiCode::Two {
-                cr,
-                an,
-            } => (an.1, an.0, cr.1, cr.0).into(),
-        }
-    }
-}
-
 #[derive(Debug)]
 pub struct Hamiltonian<K, T> {
     terms: HashMap<K, T>,
 }
 
-impl<K, T> Hamiltonian<K, T> {
+impl<K, T> Hamiltonian<K, T>
+where
+    K: Hash + Eq,
+{
     pub fn new() -> Self {
         Self {
             terms: HashMap::new(),
         }
     }
-}
 
-type FermiHamil<T> = Hamiltonian<FermiCode, T>;
-
-impl<T> FermiHamil<T>
-where
-    T: Copy + Hash + Eq,
-{
-    /// # Panics
-    ///
-    /// Panics if `idx` is out of bound, i.e. `orbital.h() >= N`
-    /// for any `orbital` in `idx`
     pub fn update(
         &mut self,
-        code: FermiCode,
+        code: K,
         value: T,
-    ) {
-        self.terms.insert(code.canonical(), value);
+    ) -> Option<T> {
+        self.terms.insert(code, value)
     }
 }
 
-impl<T> FermiHamil<T>
+impl<K, T> Hamiltonian<K, T>
 where
-    T: AddAssign + Copy + Hash + Eq,
+    T: AddAssign + Copy,
+    K: Hash + Eq,
 {
     pub fn add(
         &mut self,
-        code: FermiCode,
-        value: T,
-    ) {
-        self.terms
-            .entry(code.canonical())
-            .and_modify(|coeff| *coeff += value)
-            .or_insert(value);
-    }
-}
-
-type PauliHamil<T> = Hamiltonian<PauliCode, T>;
-
-impl<T> PauliHamil<T>
-where
-    T: Hash + Eq,
-{
-    pub fn update(
-        &mut self,
-        code: PauliCode,
-        value: T,
-    ) {
-        self.terms.insert(code, value);
-    }
-}
-
-impl<T> PauliHamil<T>
-where
-    T: AddAssign + Copy + Hash + Eq,
-{
-    pub fn add(
-        &mut self,
-        code: PauliCode,
+        code: K,
         value: T,
     ) {
         self.terms
@@ -416,11 +215,183 @@ where
     }
 }
 
+pub type FermiHamil<T> = Hamiltonian<FermiCode, T>;
+pub type PauliHamil<T> = Hamiltonian<PauliCode, T>;
+
 impl<T> From<FermiHamil<T>> for PauliHamil<T>
 where
-    T: Float,
+    T: Float + AddAssign,
 {
     fn from(hamil: FermiHamil<T>) -> Self {
-        todo!()
+        let mut pauli_hamil = PauliHamil::new();
+        for (code, value) in hamil.terms {
+            match code {
+                FermiCode::One {
+                    cr,
+                    an,
+                } => {
+                    let (p, q) = (cr.h(), an.h());
+                    let half = T::from(0.5).unwrap();
+                    if p == q {
+                        pauli_hamil.add(
+                            PauliCode::with_pauli(p, Pauli::I),
+                            value * half,
+                        );
+                        pauli_hamil.add(
+                            PauliCode::with_pauli(q, Pauli::Z),
+                            value * -half,
+                        );
+                    } else {
+                        // canonical ordering means p<=q
+                        let mut pauli_code = PauliCode::new();
+                        pauli_code.update(p, Pauli::X).update(q, Pauli::X);
+                        for i in p + 1..q - 1 {
+                            pauli_code.update(i, Pauli::Z);
+                        }
+                        pauli_hamil.add(pauli_code, value * half);
+
+                        let mut pauli_code = PauliCode::new();
+                        pauli_code.update(p, Pauli::Y).update(q, Pauli::Y);
+                        for i in p + 1..q - 1 {
+                            pauli_code.update(i, Pauli::Z);
+                        }
+                        pauli_hamil.add(pauli_code, value * half)
+                    }
+                }
+                FermiCode::Two {
+                    cr,
+                    an,
+                } => {
+                    let (p, q, r, s) = (cr.0.h(), cr.1.h(), an.0.h(), an.1.h());
+                    let quarter = T::from(0.25).unwrap();
+
+                    if p == s && q == r {
+                        // canonical ordering means q>p
+                        pauli_hamil.add(
+                            PauliCode::with_pauli(p, Pauli::I),
+                            value * quarter,
+                        );
+                        pauli_hamil.add(
+                            PauliCode::with_pauli(p, Pauli::Z),
+                            value * -quarter,
+                        );
+                        pauli_hamil.add(
+                            PauliCode::with_pauli(q, Pauli::Z),
+                            value * -quarter,
+                        );
+                        let mut pauli_code = PauliCode::new();
+                        pauli_code.update(p, Pauli::Z).update(q, Pauli::Z);
+                        pauli_hamil.add(pauli_code, value * quarter);
+                    } else if q == r {
+                        let mut pauli_code = PauliCode::new();
+                        for i in p + 1..s - 1 {
+                            pauli_code.update(i, Pauli::Z);
+                        }
+                        pauli_code.update(p, Pauli::X).update(s, Pauli::X);
+                        pauli_hamil.add(pauli_code, value * quarter);
+
+                        let mut pauli_code = PauliCode::new();
+                        for i in p + 1..s - 1 {
+                            pauli_code.update(i, Pauli::Z);
+                        }
+                        pauli_code.update(p, Pauli::X).update(s, Pauli::X);
+                        pauli_code.update(q, Pauli::Z);
+                        pauli_hamil.add(pauli_code, value * -quarter);
+
+                        let mut pauli_code = PauliCode::new();
+                        for i in p + 1..s - 1 {
+                            pauli_code.update(i, Pauli::Z);
+                        }
+                        pauli_code.update(p, Pauli::Y).update(s, Pauli::Y);
+                        pauli_hamil.add(pauli_code, value * quarter);
+
+                        let mut pauli_code = PauliCode::new();
+                        for i in p + 1..s - 1 {
+                            pauli_code.update(i, Pauli::Z);
+                        }
+                        pauli_code.update(p, Pauli::Y).update(s, Pauli::Y);
+                        pauli_code.update(q, Pauli::Z);
+                        pauli_hamil.add(pauli_code, value * -quarter);
+                    } else {
+                        let eighth = quarter / (T::one() + T::one());
+                        let pc = {
+                            let mut pc = PauliCode::new();
+                            for i in p + 1..q - 1 {
+                                pc.update(i, Pauli::Z);
+                            }
+                            for i in s + 1..r - 1 {
+                                pc.update(i, Pauli::Z);
+                            }
+                            pc
+                        };
+
+                        let mut pauli_code = pc.clone();
+                        pauli_code
+                            .update(p, Pauli::X)
+                            .update(q, Pauli::X)
+                            .update(r, Pauli::X)
+                            .update(s, Pauli::X);
+                        pauli_hamil.add(pauli_code, eighth);
+
+                        let mut pauli_code = pc.clone();
+                        pauli_code
+                            .update(p, Pauli::X)
+                            .update(q, Pauli::X)
+                            .update(r, Pauli::Y)
+                            .update(s, Pauli::Y);
+                        pauli_hamil.add(pauli_code, -eighth);
+
+                        let mut pauli_code = pc.clone();
+                        pauli_code
+                            .update(p, Pauli::X)
+                            .update(q, Pauli::Y)
+                            .update(r, Pauli::X)
+                            .update(s, Pauli::Y);
+                        pauli_hamil.add(pauli_code, eighth);
+
+                        let mut pauli_code = pc.clone();
+                        pauli_code
+                            .update(p, Pauli::Y)
+                            .update(q, Pauli::X)
+                            .update(r, Pauli::X)
+                            .update(s, Pauli::Y);
+                        pauli_hamil.add(pauli_code, eighth);
+
+                        let mut pauli_code = pc.clone();
+                        pauli_code
+                            .update(p, Pauli::Y)
+                            .update(q, Pauli::X)
+                            .update(r, Pauli::Y)
+                            .update(s, Pauli::X);
+                        pauli_hamil.add(pauli_code, eighth);
+
+                        let mut pauli_code = pc.clone();
+                        pauli_code
+                            .update(p, Pauli::Y)
+                            .update(q, Pauli::Y)
+                            .update(r, Pauli::X)
+                            .update(s, Pauli::X);
+                        pauli_hamil.add(pauli_code, -eighth);
+
+                        let mut pauli_code = pc.clone();
+                        pauli_code
+                            .update(p, Pauli::X)
+                            .update(q, Pauli::Y)
+                            .update(r, Pauli::Y)
+                            .update(s, Pauli::X);
+                        pauli_hamil.add(pauli_code, eighth);
+
+                        let mut pauli_code = pc;
+                        pauli_code
+                            .update(p, Pauli::Y)
+                            .update(q, Pauli::Y)
+                            .update(r, Pauli::Y)
+                            .update(s, Pauli::Y);
+                        pauli_hamil.add(pauli_code, eighth);
+                    }
+                }
+            }
+        }
+        pauli_hamil
     }
 }

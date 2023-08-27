@@ -7,13 +7,17 @@ use std::{
     },
     hash::Hash,
     iter::Step,
-    ops::AddAssign,
+    ops::{
+        Add,
+        AddAssign,
+    },
 };
 
 use num::{
     Float,
     Num,
 };
+
 
 #[cfg(test)]
 mod tests;
@@ -385,11 +389,11 @@ impl<K> Code for Pauli<K> where K: Clone + Eq + Hash {}
 impl<K> Code for Mulliken<K> where K: Clone + Eq + Hash {}
 
 #[derive(Debug)]
-pub struct Hamil<T, K> {
+pub struct Terms<T, K> {
     terms: HashMap<K, T>,
 }
 
-impl<T, K> Default for Hamil<T, K>
+impl<T, K> Default for Terms<T, K>
 where
     K: Code,
 {
@@ -398,7 +402,7 @@ where
     }
 }
 
-impl<T, K> Hamil<T, K>
+impl<T, K> Terms<T, K>
 where
     K: Code,
 {
@@ -410,7 +414,7 @@ where
     }
 }
 
-impl<T, K> Hamil<T, K>
+impl<T, K> Terms<T, K>
 where
     K: Code,
 {
@@ -427,7 +431,7 @@ where
     }
 }
 
-impl<T, K> Hamil<T, K>
+impl<T, K> Terms<T, K>
 where
     T: AddAssign + Copy,
     K: Code,
@@ -445,16 +449,13 @@ where
     }
 }
 
-pub type FermiHamil<T, K> = Hamil<T, Fermi<K>>;
-pub type PauliHamil<T, K> = Hamil<T, Pauli<K>>;
-
-impl<T, K> From<Hamil<T, Fermi<K>>> for Hamil<T, Pauli<K>>
+impl<T, K> From<Terms<T, Fermi<K>>> for Terms<T, Pauli<K>>
 where
     T: Float + AddAssign,
     K: Copy + Hash + Num + Ord + Step,
 {
-    fn from(fermi_hamil: FermiHamil<T, K>) -> Self {
-        let mut hamil = PauliHamil::new();
+    fn from(fermi_hamil: Terms<T, Fermi<K>>) -> Self {
+        let mut hamil = Terms::new();
         for (fermi_code, value) in fermi_hamil.terms {
             match fermi_code.kind() {
                 FermiCode::Offset => {
@@ -487,7 +488,7 @@ where
 }
 
 fn update_hamil_one_pq<T, K>(
-    hamil: &mut Hamil<T, Pauli<K>>,
+    hamil: &mut Terms<T, Pauli<K>>,
     value: T,
     p: K,
     q: K,
@@ -514,7 +515,7 @@ fn update_hamil_one_pq<T, K>(
 }
 
 fn update_hamil_two_pq<T, K>(
-    hamil: &mut Hamil<T, Pauli<K>>,
+    hamil: &mut Terms<T, Pauli<K>>,
     value: T,
     p: K,
     q: K,
@@ -535,7 +536,7 @@ fn update_hamil_two_pq<T, K>(
 }
 
 fn update_hamil_two_pqs<T, K>(
-    hamil: &mut Hamil<T, Pauli<K>>,
+    hamil: &mut Terms<T, Pauli<K>>,
     value: T,
     p: K,
     q: K,
@@ -564,7 +565,7 @@ fn update_hamil_two_pqs<T, K>(
 }
 
 fn update_hamil_two_pqrs<T, K>(
-    hamil: &mut Hamil<T, Pauli<K>>,
+    hamil: &mut Terms<T, Pauli<K>>,
     value: T,
     p: K,
     q: K,
@@ -633,13 +634,13 @@ fn update_hamil_two_pqrs<T, K>(
     hamil.add_to(&code, value * eighth);
 }
 
-impl<T, K> From<Hamil<T, Mulliken<K>>> for Hamil<T, Fermi<K>>
+impl<T, K> From<Terms<T, Mulliken<K>>> for Terms<T, Fermi<K>>
 where
     T: AddAssign + Copy,
     K: Copy + Eq + Hash + Num + PartialOrd,
 {
-    fn from(mull_hamil: Hamil<T, Mulliken<K>>) -> Self {
-        let mut hamil = FermiHamil::new();
+    fn from(mull_hamil: Terms<T, Mulliken<K>>) -> Self {
+        let mut hamil = Terms::new();
         for (mull_code, value) in mull_hamil.terms {
             match mull_code.kind {
                 MullikenCode::Coulomb => {
@@ -684,5 +685,51 @@ where
             }
         }
         hamil
+    }
+}
+
+#[derive(Debug)]
+pub enum Hamil<T, K> {
+    Offset(T),
+    Terms(Terms<T, K>),
+    Sum(Box<Self>, Box<Self>),
+}
+
+impl<T, K> Add for Hamil<T, K> {
+    type Output = Self;
+
+    fn add(
+        self,
+        rhs: Self,
+    ) -> Self::Output {
+        Self::Sum(Box::new(self), Box::new(rhs))
+    }
+}
+
+impl<T, K> From<Hamil<T, Fermi<K>>> for Hamil<T, Pauli<K>>
+where
+    T: Float + AddAssign,
+    K: Copy + Hash + Num + Ord + Step,
+{
+    fn from(value: Hamil<T, Fermi<K>>) -> Self {
+        match value {
+            Hamil::Offset(x) => Hamil::Offset(x),
+            Hamil::Terms(terms) => Hamil::Terms(terms.into()),
+            Hamil::Sum(h1, h2) => Self::from(*h1) + Self::from(*h2),
+        }
+    }
+}
+
+impl<T, K> From<Hamil<T, Mulliken<K>>> for Hamil<T, Fermi<K>>
+where
+    T: AddAssign + Copy,
+    K: Copy + Eq + Hash + Num + PartialOrd,
+{
+    fn from(value: Hamil<T, Mulliken<K>>) -> Self {
+        match value {
+            Hamil::Offset(x) => Hamil::Offset(x),
+            Hamil::Terms(terms) => Hamil::Terms(terms.into()),
+            Hamil::Sum(h1, h2) => Self::from(*h1) + Self::from(*h2),
+        }
     }
 }

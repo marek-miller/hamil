@@ -308,23 +308,7 @@ where
                     an,
                 } => {
                     let (p, q) = (cr.enumerate(), an.enumerate());
-                    let half = T::from(0.5).unwrap();
-                    if p == q {
-                        hamil.add(PauliCode::Identity, value * half);
-                        hamil.add(
-                            PauliCode::with_pauli(q, Pauli::Z),
-                            value * -half,
-                        );
-                    } else {
-                        // canonical ordering means p<=q
-                        let mut code = PauliCode::from(
-                            (p + K::one()..q - K::one()).map(|i| (i, Pauli::Z)),
-                        );
-                        code.update(p, Pauli::X).update(q, Pauli::X);
-                        hamil.add(code.clone(), value * half);
-                        code.update(p, Pauli::Y).update(q, Pauli::Y);
-                        hamil.add(code, value * half);
-                    }
+                    update_hamil_one_pq(&mut hamil, value, p, q);
                 }
                 FermiCode::Two {
                     cr,
@@ -336,99 +320,159 @@ where
                         an.0.enumerate(),
                         an.1.enumerate(),
                     );
-                    let quarter = T::from(0.25).unwrap();
 
                     if p == s && q == r {
-                        // canonical ordering means q>p
-                        hamil.add(PauliCode::Identity, value * quarter);
-                        hamil.add(
-                            PauliCode::with_pauli(p, Pauli::Z),
-                            value * -quarter,
-                        );
-                        hamil.add(
-                            PauliCode::with_pauli(q, Pauli::Z),
-                            value * -quarter,
-                        );
-                        hamil.add(
-                            PauliCode::from([(p, Pauli::Z), (q, Pauli::Z)]),
-                            value * quarter,
-                        );
+                        update_hamil_two_pq(&mut hamil, value, p, q);
                     } else if q == r {
-                        let mut code = PauliCode::from(
-                            (p + K::one()..s - K::one()).map(|i| (i, Pauli::Z)),
-                        );
-                        code.update(p, Pauli::X).update(s, Pauli::X);
-                        hamil.add(code.clone(), value * quarter);
-                        code.update(p, Pauli::Y).update(s, Pauli::Y);
-                        hamil.add(code.clone(), value * quarter);
-
-                        code.update(q, Pauli::Z);
-                        code.update(p, Pauli::X).update(s, Pauli::X);
-                        hamil.add(code.clone(), value * -quarter);
-                        code.update(p, Pauli::Y).update(s, Pauli::Y);
-                        hamil.add(code, value * -quarter);
+                        update_hamil_two_pqs(&mut hamil, value, p, q, s);
                     } else {
-                        let eighth = quarter / (T::one() + T::one());
-
-                        let mut code = PauliCode::new();
-                        for i in p + K::one()..q - K::one() {
-                            code.update(i, Pauli::Z);
-                        }
-                        for i in s + K::one()..r - K::one() {
-                            code.update(i, Pauli::Z);
-                        }
-
-                        code.update(p, Pauli::X)
-                            .update(q, Pauli::X)
-                            .update(r, Pauli::X)
-                            .update(s, Pauli::X);
-                        hamil.add(code.clone(), eighth);
-
-                        code.update(p, Pauli::X)
-                            .update(q, Pauli::X)
-                            .update(r, Pauli::Y)
-                            .update(s, Pauli::Y);
-                        hamil.add(code.clone(), -eighth);
-
-                        code.update(p, Pauli::X)
-                            .update(q, Pauli::Y)
-                            .update(r, Pauli::X)
-                            .update(s, Pauli::Y);
-                        hamil.add(code.clone(), eighth);
-
-                        code.update(p, Pauli::Y)
-                            .update(q, Pauli::X)
-                            .update(r, Pauli::X)
-                            .update(s, Pauli::Y);
-                        hamil.add(code.clone(), eighth);
-
-                        code.update(p, Pauli::Y)
-                            .update(q, Pauli::X)
-                            .update(r, Pauli::Y)
-                            .update(s, Pauli::X);
-                        hamil.add(code.clone(), eighth);
-
-                        code.update(p, Pauli::Y)
-                            .update(q, Pauli::Y)
-                            .update(r, Pauli::X)
-                            .update(s, Pauli::X);
-                        hamil.add(code.clone(), -eighth);
-
-                        code.update(p, Pauli::X)
-                            .update(q, Pauli::Y)
-                            .update(r, Pauli::Y)
-                            .update(s, Pauli::X);
-                        hamil.add(code.clone(), eighth);
-
-                        code.update(p, Pauli::Y)
-                            .update(q, Pauli::Y)
-                            .update(r, Pauli::Y)
-                            .update(s, Pauli::Y);
-                        hamil.add(code, eighth);
+                        update_hamil_two_pqrs(&mut hamil, value, p, q, r, s);
                     }
                 }
             }
         }
         hamil
+    }
+}
+
+fn update_hamil_two_pqrs<T, K>(
+    hamil: &mut Hamil<T, PauliCode<K>>,
+    value: T,
+    p: K,
+    q: K,
+    s: K,
+    r: K,
+) where
+    T: Float + AddAssign,
+    K: Copy + Hash + Num + Ord + Step,
+{
+    let eighth = T::from(0.125).unwrap();
+
+    let mut code = PauliCode::new();
+    for i in p + K::one()..q - K::one() {
+        code.update(i, Pauli::Z);
+    }
+    for i in s + K::one()..r - K::one() {
+        code.update(i, Pauli::Z);
+    }
+
+    code.update(p, Pauli::X)
+        .update(q, Pauli::X)
+        .update(r, Pauli::X)
+        .update(s, Pauli::X);
+    hamil.add(code.clone(), value * eighth);
+
+    code.update(p, Pauli::X)
+        .update(q, Pauli::X)
+        .update(r, Pauli::Y)
+        .update(s, Pauli::Y);
+    hamil.add(code.clone(), value * -eighth);
+
+    code.update(p, Pauli::X)
+        .update(q, Pauli::Y)
+        .update(r, Pauli::X)
+        .update(s, Pauli::Y);
+    hamil.add(code.clone(), value * eighth);
+
+    code.update(p, Pauli::Y)
+        .update(q, Pauli::X)
+        .update(r, Pauli::X)
+        .update(s, Pauli::Y);
+    hamil.add(code.clone(), value * eighth);
+
+    code.update(p, Pauli::Y)
+        .update(q, Pauli::X)
+        .update(r, Pauli::Y)
+        .update(s, Pauli::X);
+    hamil.add(code.clone(), value * eighth);
+
+    code.update(p, Pauli::Y)
+        .update(q, Pauli::Y)
+        .update(r, Pauli::X)
+        .update(s, Pauli::X);
+    hamil.add(code.clone(), value * -eighth);
+
+    code.update(p, Pauli::X)
+        .update(q, Pauli::Y)
+        .update(r, Pauli::Y)
+        .update(s, Pauli::X);
+    hamil.add(code.clone(), value * eighth);
+
+    code.update(p, Pauli::Y)
+        .update(q, Pauli::Y)
+        .update(r, Pauli::Y)
+        .update(s, Pauli::Y);
+    hamil.add(code, value * eighth);
+}
+
+fn update_hamil_two_pqs<T, K>(
+    hamil: &mut Hamil<T, PauliCode<K>>,
+    value: T,
+    p: K,
+    q: K,
+    s: K,
+) where
+    T: Float + AddAssign,
+    K: Copy + Hash + Num + Ord + Step,
+{
+    let quarter = T::from(0.25).unwrap();
+    let mut code =
+        PauliCode::from((p + K::one()..s - K::one()).map(|i| (i, Pauli::Z)));
+    code.update(p, Pauli::X).update(s, Pauli::X);
+    hamil.add(code.clone(), value * quarter);
+    code.update(p, Pauli::Y).update(s, Pauli::Y);
+    hamil.add(code.clone(), value * quarter);
+
+    code.update(q, Pauli::Z);
+    code.update(p, Pauli::X).update(s, Pauli::X);
+    hamil.add(code.clone(), value * -quarter);
+    code.update(p, Pauli::Y).update(s, Pauli::Y);
+    hamil.add(code, value * -quarter);
+}
+
+fn update_hamil_two_pq<T, K>(
+    hamil: &mut Hamil<T, PauliCode<K>>,
+    value: T,
+    p: K,
+    q: K,
+) where
+    T: Float + AddAssign,
+    K: Copy + Hash + Num + Ord + Step,
+{
+    let quarter = T::from(0.25).unwrap();
+
+    // canonical ordering means q>p
+    hamil.add(PauliCode::Identity, value * quarter);
+    hamil.add(PauliCode::with_pauli(p, Pauli::Z), value * -quarter);
+    hamil.add(PauliCode::with_pauli(q, Pauli::Z), value * -quarter);
+    hamil.add(
+        PauliCode::from([(p, Pauli::Z), (q, Pauli::Z)]),
+        value * quarter,
+    );
+}
+
+fn update_hamil_one_pq<T, K>(
+    hamil: &mut Hamil<T, PauliCode<K>>,
+    value: T,
+    p: K,
+    q: K,
+) where
+    T: Float + AddAssign,
+    K: Copy + Hash + Num + Ord + Step,
+{
+    let half = T::from(0.5).unwrap();
+
+    if p == q {
+        hamil.add(PauliCode::Identity, value * half);
+        hamil.add(PauliCode::with_pauli(q, Pauli::Z), value * -half);
+    } else {
+        // canonical ordering means p<=q
+        let mut code = PauliCode::from(
+            (p + K::one()..q - K::one()).map(|i| (i, Pauli::Z)),
+        );
+        code.update(p, Pauli::X).update(q, Pauli::X);
+        hamil.add(code.clone(), value * half);
+        code.update(p, Pauli::Y).update(q, Pauli::Y);
+        hamil.add(code, value * half);
     }
 }

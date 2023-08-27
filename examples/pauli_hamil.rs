@@ -1,34 +1,18 @@
 use hamil::{
-    FermiCode,
     FermiHamil,
-    Orbital,
+    Hamil,
+    MullikenCode,
     PauliHamil,
-    Spin,
 };
 
 fn main() {
-    let mut fermi = FermiHamil::new();
+    let mut hamil = Hamil::new();
+    hamil.replace(&MullikenCode::Coulomb, 0.1);
+    hamil.replace(&MullikenCode::one(1, 0).unwrap(), 0.2);
+    hamil.replace(&MullikenCode::two(2, 1, 1, 1).unwrap(), 0.3);
 
-    let o1 = Orbital::new(0, Spin::Down);
-    let o2 = Orbital::new(1, Spin::Down);
-    fermi.replace_or_insert(&FermiCode::one(o1, o2).unwrap(), 0.5);
-
-    let o1 = Orbital::new(0, Spin::Up);
-    let o2 = Orbital::new(1, Spin::Up);
-    fermi.replace_or_insert(&FermiCode::one(o1, o2).unwrap(), 0.5);
-
-    let o1 = Orbital::new(0, Spin::Down);
-    let o2 = Orbital::new(1, Spin::Down);
-    let o3 = Orbital::new(1, Spin::Down);
-    let o4 = Orbital::new(0, Spin::Down);
-    fermi.replace_or_insert(&FermiCode::two((o1, o2), (o3, o4)).unwrap(), 0.5);
-
-    let o1 = Orbital::new(0, Spin::Up);
-    let o2 = Orbital::new(1, Spin::Up);
-    let o3 = Orbital::new(2, Spin::Up);
-    let o4 = Orbital::new(1, Spin::Up);
-    fermi.replace_or_insert(&FermiCode::two((o1, o2), (o3, o4)).unwrap(), 0.5);
-
+    println!("{hamil:?}");
+    let fermi = FermiHamil::from(hamil);
     println!("{fermi:?}");
     let pauli = PauliHamil::from(fermi);
     println!("{pauli:?}");

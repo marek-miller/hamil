@@ -46,6 +46,11 @@ impl Spin {
             Up => Down,
         }
     }
+
+    #[must_use]
+    pub fn variants() -> std::array::IntoIter<Self, 2> {
+        [Self::Down, Self::Up].into_iter()
+    }
 }
 
 impl<T> Enumerate<T> for Spin
@@ -108,17 +113,11 @@ where
     }
 }
 
-/// `FermiCode` in canonical ordering
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum FermiCode<K> {
-    One {
-        cr: Orbital<K>,
-        an: Orbital<K>,
-    },
-    Two {
-        cr: (Orbital<K>, Orbital<K>),
-        an: (Orbital<K>, Orbital<K>),
-    },
+    Offset,
+    One(Orbital<K>, Orbital<K>),
+    Two((Orbital<K>, Orbital<K>), (Orbital<K>, Orbital<K>)),
 }
 
 impl<K> FermiCode<K>
@@ -129,10 +128,7 @@ where
         cr: Orbital<K>,
         an: Orbital<K>,
     ) -> Option<Self> {
-        (cr.enumerate() <= an.enumerate()).then_some(FermiCode::One {
-            cr,
-            an,
-        })
+        (cr.enumerate() <= an.enumerate()).then_some(FermiCode::One(cr, an))
     }
 
     pub fn two(
@@ -142,10 +138,7 @@ where
         (cr.0.enumerate() < cr.1.enumerate()
             && an.0.enumerate() > an.1.enumerate()
             && cr.0.enumerate() <= an.1.enumerate())
-        .then_some(FermiCode::Two {
-            cr,
-            an,
-        })
+        .then_some(FermiCode::Two(cr, an))
     }
 }
 
@@ -155,6 +148,13 @@ pub enum Pauli {
     X,
     Y,
     Z,
+}
+
+impl Pauli {
+    #[must_use]
+    pub fn variants() -> std::array::IntoIter<Self, 3> {
+        [Self::X, Self::Y, Self::Z].into_iter()
+    }
 }
 
 macro_rules! impl_enumerate_pauli {
@@ -288,7 +288,7 @@ impl<T, K> Hamil<T, K>
 where
     K: Clone + Eq + Hash,
 {
-    pub fn replace_or_insert(
+    pub fn replace(
         &mut self,
         code: &K,
         value: T,
@@ -306,7 +306,7 @@ where
     T: AddAssign + Copy,
     K: Clone + Eq + Hash,
 {
-    pub fn add_or_insert(
+    pub fn add_to(
         &mut self,
         code: &K,
         value: T,
@@ -331,17 +331,14 @@ where
         let mut hamil = PauliHamil::new();
         for (fermi_code, value) in fermi_hamil.terms {
             match fermi_code {
-                FermiCode::One {
-                    cr,
-                    an,
-                } => {
+                FermiCode::Offset => {
+                    hamil.add_to(&PauliCode::Identity, value);
+                }
+                FermiCode::One(cr, an) => {
                     let (p, q) = (cr.enumerate(), an.enumerate());
                     update_hamil_one_pq(&mut hamil, value, p, q);
                 }
-                FermiCode::Two {
-                    cr,
-                    an,
-                } => {
+                FermiCode::Two(cr, an) => {
                     let (p, q, r, s) = (
                         cr.0.enumerate(),
                         cr.1.enumerate(),
@@ -375,8 +372,8 @@ fn update_hamil_one_pq<T, K>(
     let half = T::from(0.5).unwrap();
 
     if p == q {
-        hamil.add_or_insert(&PauliCode::Identity, value * half);
-        hamil.add_or_insert(&PauliCode::with_pauli(q, Pauli::Z), value * -half);
+        hamil.add_to(&PauliCode::Identity, value * half);
+        hamil.add_to(&PauliCode::with_pauli(q, Pauli::Z), value * -half);
     } else {
         // canonical ordering means p<=q
         let mut code = PauliCode::from(
@@ -384,10 +381,10 @@ fn update_hamil_one_pq<T, K>(
         );
         code.update(p, Pauli::X);
         code.update(q, Pauli::X);
-        hamil.add_or_insert(&code, value * half);
+        hamil.add_to(&code, value * half);
         code.update(p, Pauli::Y);
         code.update(q, Pauli::Y);
-        hamil.add_or_insert(&code, value * half);
+        hamil.add_to(&code, value * half);
     }
 }
 
@@ -403,10 +400,10 @@ fn update_hamil_two_pq<T, K>(
     let quarter = T::from(0.25).unwrap();
 
     // canonical ordering means q>p
-    hamil.add_or_insert(&PauliCode::Identity, value * quarter);
-    hamil.add_or_insert(&PauliCode::with_pauli(p, Pauli::Z), value * -quarter);
-    hamil.add_or_insert(&PauliCode::with_pauli(q, Pauli::Z), value * -quarter);
-    hamil.add_or_insert(
+    hamil.add_to(&PauliCode::Identity, value * quarter);
+    hamil.add_to(&PauliCode::with_pauli(p, Pauli::Z), value * -quarter);
+    hamil.add_to(&PauliCode::with_pauli(q, Pauli::Z), value * -quarter);
+    hamil.add_to(
         &PauliCode::from([(p, Pauli::Z), (q, Pauli::Z)]),
         value * quarter,
     );
@@ -427,18 +424,18 @@ fn update_hamil_two_pqs<T, K>(
         PauliCode::from((p + K::one()..s - K::one()).map(|i| (i, Pauli::Z)));
     code.update(p, Pauli::X);
     code.update(s, Pauli::X);
-    hamil.add_or_insert(&code, value * quarter);
+    hamil.add_to(&code, value * quarter);
     code.update(p, Pauli::Y);
     code.update(s, Pauli::Y);
-    hamil.add_or_insert(&code, value * quarter);
+    hamil.add_to(&code, value * quarter);
 
     code.update(q, Pauli::Z);
     code.update(p, Pauli::X);
     code.update(s, Pauli::X);
-    hamil.add_or_insert(&code, value * -quarter);
+    hamil.add_to(&code, value * -quarter);
     code.update(p, Pauli::Y);
     code.update(s, Pauli::Y);
-    hamil.add_or_insert(&code, value * -quarter);
+    hamil.add_to(&code, value * -quarter);
 }
 
 fn update_hamil_two_pqrs<T, K>(
@@ -466,47 +463,129 @@ fn update_hamil_two_pqrs<T, K>(
     code.update(q, Pauli::X);
     code.update(r, Pauli::X);
     code.update(s, Pauli::X);
-    hamil.add_or_insert(&code, value * eighth);
+    hamil.add_to(&code, value * eighth);
 
     code.update(p, Pauli::X);
     code.update(q, Pauli::X);
     code.update(r, Pauli::Y);
     code.update(s, Pauli::Y);
-    hamil.add_or_insert(&code, value * -eighth);
+    hamil.add_to(&code, value * -eighth);
 
     code.update(p, Pauli::X);
     code.update(q, Pauli::Y);
     code.update(r, Pauli::X);
     code.update(s, Pauli::Y);
-    hamil.add_or_insert(&code, value * eighth);
+    hamil.add_to(&code, value * eighth);
 
     code.update(p, Pauli::Y);
     code.update(q, Pauli::X);
     code.update(r, Pauli::X);
     code.update(s, Pauli::Y);
-    hamil.add_or_insert(&code, value * eighth);
+    hamil.add_to(&code, value * eighth);
 
     code.update(p, Pauli::Y);
     code.update(q, Pauli::X);
     code.update(r, Pauli::Y);
     code.update(s, Pauli::X);
-    hamil.add_or_insert(&code, value * eighth);
+    hamil.add_to(&code, value * eighth);
 
     code.update(p, Pauli::Y);
     code.update(q, Pauli::Y);
     code.update(r, Pauli::X);
     code.update(s, Pauli::X);
-    hamil.add_or_insert(&code, value * -eighth);
+    hamil.add_to(&code, value * -eighth);
 
     code.update(p, Pauli::X);
     code.update(q, Pauli::Y);
     code.update(r, Pauli::Y);
     code.update(s, Pauli::X);
-    hamil.add_or_insert(&code, value * eighth);
+    hamil.add_to(&code, value * eighth);
 
     code.update(p, Pauli::Y);
     code.update(q, Pauli::Y);
     code.update(r, Pauli::Y);
     code.update(s, Pauli::Y);
-    hamil.add_or_insert(&code, value * eighth);
+    hamil.add_to(&code, value * eighth);
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum MullikenCode<K> {
+    Coulomb,
+    One(K, K),
+    Two(K, K, K, K),
+}
+
+impl<K> MullikenCode<K>
+where
+    K: PartialOrd,
+{
+    pub fn one(
+        i: K,
+        j: K,
+    ) -> Option<Self> {
+        (i >= j).then_some(MullikenCode::One(i, j))
+    }
+
+    pub fn two(
+        i: K,
+        j: K,
+        k: K,
+        l: K,
+    ) -> Option<Self> {
+        Some(MullikenCode::Two(i, j, k, l))
+    }
+}
+
+impl<T, K> From<Hamil<T, MullikenCode<K>>> for Hamil<T, FermiCode<K>>
+where
+    T: AddAssign + Copy,
+    K: Copy + Eq + Hash + Num + PartialOrd,
+{
+    fn from(mull_hamil: Hamil<T, MullikenCode<K>>) -> Self {
+        let mut hamil = FermiHamil::new();
+        for (mull_code, value) in mull_hamil.terms {
+            match mull_code {
+                MullikenCode::Coulomb => {
+                    hamil.add_to(&FermiCode::Offset, value);
+                }
+                MullikenCode::One(i, j) => {
+                    for spin in Spin::variants() {
+                        let p = Orbital::new(j, spin);
+                        let q = Orbital::new(i, spin);
+                        hamil.add_to(&FermiCode::one(p, q).unwrap(), value);
+                    }
+                }
+                // we change from chemists' to Dirac convention here:
+                MullikenCode::Two(i, k, l, j) => {
+                    use Spin::{
+                        Down,
+                        Up,
+                    };
+                    for (s1, s2) in
+                        [(Down, Down), (Down, Up), (Up, Down), (Up, Up)]
+                    {
+                        for (is, js, ks, ls) in [
+                            (i, j, l, k),
+                            (j, i, k, l),
+                            (j, i, l, k),
+                            (k, l, i, j),
+                            (k, l, j, i),
+                            (l, k, j, i),
+                            (l, k, i, j),
+                        ] {
+                            let p = Orbital::new(is - K::one(), s1);
+                            let q = Orbital::new(js - K::one(), s2);
+                            let r = Orbital::new(ks - K::one(), s2);
+                            let s = Orbital::new(ls - K::one(), s1);
+
+                            if let Some(code) = FermiCode::two((p, q), (r, s)) {
+                                hamil.add_to(&code, value);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        hamil
+    }
 }

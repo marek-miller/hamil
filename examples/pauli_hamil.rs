@@ -29,7 +29,7 @@ fn main() {
     let o4 = Orbital::new(1, Spin::Up);
     fermi.update(FermiCode::two((o1, o2), (o3, o4)).unwrap(), 0.5);
 
-    println!("{:?}", fermi);
+    println!("{fermi:?}");
     let pauli = PauliHamil::from(fermi);
-    println!("{:?}", pauli);
+    println!("{pauli:?}");
 }

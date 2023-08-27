@@ -1,18 +1,28 @@
+#![feature(step_trait)]
+
 use std::{
     collections::{
         BTreeMap,
         HashMap,
     },
     hash::Hash,
+    iter::Step,
     ops::AddAssign,
 };
 
-use num::Float;
+use num::{
+    Float,
+    Num,
+};
 
 #[cfg(test)]
 mod tests;
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Hash, Eq)]
+pub trait Enumerate<T> {
+    fn enumerate(&self) -> T;
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Spin {
     #[default]
     Down,
@@ -20,12 +30,17 @@ pub enum Spin {
 }
 
 impl Spin {
+    #[must_use]
     pub fn is_up(&self) -> bool {
         *self == Self::Up
     }
 
+    #[must_use]
     pub fn flip(self) -> Self {
-        use Spin::*;
+        use Spin::{
+            Down,
+            Up,
+        };
         match self {
             Down => Up,
             Up => Down,
@@ -33,142 +48,193 @@ impl Spin {
     }
 }
 
-impl From<Spin> for u32 {
-    fn from(value: Spin) -> Self {
-        match value {
-            Spin::Down => 0,
-            Spin::Up => 1,
+impl<T> Enumerate<T> for Spin
+where
+    T: Num,
+{
+    fn enumerate(&self) -> T {
+        match self {
+            Self::Down => T::zero(),
+            Self::Up => T::one(),
         }
     }
 }
 
-impl From<u32> for Spin {
-    fn from(value: u32) -> Self {
-        if value == 0 {
-            Spin::Down
-        } else {
-            Spin::Up
-        }
-    }
-}
-
-#[derive(Debug, Default, Clone, Copy, PartialEq, Hash, Eq)]
-pub struct Orbital {
-    pub j: u32,
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Orbital<T> {
+    pub j: T,
     pub s: Spin,
 }
 
-impl Orbital {
+impl<T> Orbital<T> {
     pub fn new(
-        index: u32,
-        spin: Spin,
+        j: T,
+        s: Spin,
     ) -> Self {
         Self {
-            j: index, s: spin
+            j,
+            s,
         }
     }
-
-    pub fn h(&self) -> u32 {
-        self.j * 2 + u32::from(self.s)
+}
+impl<T> Orbital<T>
+where
+    T: Num + Copy,
+{
+    pub fn h(&self) -> T {
+        self.j * (T::one() + T::one()) + self.s.enumerate()
     }
 
     pub fn g(
         &self,
-        num_orbitals: u32,
-    ) -> u32 {
-        self.j + u32::from(self.s) * num_orbitals
+        num_orbitals: T,
+    ) -> T {
+        self.j + num_orbitals * self.s.enumerate()
     }
 }
 
-impl From<(u32, Spin)> for Orbital {
-    fn from(value: (u32, Spin)) -> Self {
+impl<T> From<(T, Spin)> for Orbital<T> {
+    fn from(value: (T, Spin)) -> Self {
         Self::new(value.0, value.1)
     }
 }
 
-/// FermiCode in canonical ordering
-#[derive(Debug, PartialEq, Clone, Copy, Hash, Eq)]
-pub enum FermiCode {
+impl<T> Enumerate<T> for Orbital<T>
+where
+    T: Num + Copy,
+{
+    fn enumerate(&self) -> T {
+        self.h()
+    }
+}
+
+/// `FermiCode` in canonical ordering
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum FermiCode<K> {
     One {
-        cr: Orbital,
-        an: Orbital,
+        cr: Orbital<K>,
+        an: Orbital<K>,
     },
     Two {
-        cr: (Orbital, Orbital),
-        an: (Orbital, Orbital),
+        cr: (Orbital<K>, Orbital<K>),
+        an: (Orbital<K>, Orbital<K>),
     },
 }
 
-impl FermiCode {
+impl<K> FermiCode<K>
+where
+    K: Num + PartialOrd + Copy,
+{
     pub fn one(
-        cr: Orbital,
-        an: Orbital,
+        cr: Orbital<K>,
+        an: Orbital<K>,
     ) -> Option<Self> {
-        (cr.h() <= an.h()).then_some(FermiCode::One {
+        (cr.enumerate() <= an.enumerate()).then_some(FermiCode::One {
             cr,
             an,
         })
     }
 
     pub fn two(
-        cr: (Orbital, Orbital),
-        an: (Orbital, Orbital),
+        cr: (Orbital<K>, Orbital<K>),
+        an: (Orbital<K>, Orbital<K>),
     ) -> Option<Self> {
-        (cr.0.h() < cr.1.h() && an.0.h() > an.1.h() && cr.0.h() <= an.1.h())
-            .then_some(FermiCode::Two {
-                cr,
-                an,
-            })
+        (cr.0.enumerate() < cr.1.enumerate()
+            && an.0.enumerate() > an.1.enumerate()
+            && cr.0.enumerate() <= an.1.enumerate())
+        .then_some(FermiCode::Two {
+            cr,
+            an,
+        })
     }
 }
 
-#[derive(Debug, Default, PartialEq, Clone, Copy, Hash, Eq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Pauli {
     #[default]
-    I,
     X,
     Y,
     Z,
 }
 
-#[derive(Debug, PartialEq, Clone, Hash, Eq)]
-pub struct PauliCode(BTreeMap<u32, Pauli>);
+macro_rules! impl_enumerate_pauli {
+    ($($Typ:ty)*) => {
+        $(
+            impl Enumerate<$Typ> for Pauli {
+                fn enumerate(&self) -> $Typ {
+                    use Pauli::*;
+                    match self {
+                        X => 0,
+                        Y => 1,
+                        Z => 2,
+                    }
+                }
+            }
+        )*
+    };
+}
 
-impl Default for PauliCode {
+impl_enumerate_pauli!(u8 u16 u32 u64 usize);
+impl_enumerate_pauli!(i8 i16 i32 i64 isize);
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum PauliCode<K> {
+    Identity,
+    Product(BTreeMap<K, Pauli>),
+}
+
+impl<K> Default for PauliCode<K> {
     fn default() -> Self {
-        Self::new()
+        Self::Identity
     }
 }
 
-impl PauliCode {
+impl<K> PauliCode<K> {
+    #[must_use]
     pub fn new() -> Self {
-        Self(BTreeMap::new())
+        Self::default()
     }
+}
 
+impl<K> PauliCode<K>
+where
+    K: Ord,
+{
     pub fn with_pauli(
-        idx: u32,
+        idx: K,
         pauli: Pauli,
     ) -> Self {
-        let mut code = PauliCode::new();
-        code.0.insert(idx, pauli);
-        code
+        let mut tree = BTreeMap::new();
+        tree.insert(idx, pauli);
+        Self::Product(tree)
     }
 
     pub fn update(
         &mut self,
-        idx: u32,
+        idx: K,
         pauli: Pauli,
     ) -> &mut Self {
-        self.0.insert(idx, pauli);
+        match self {
+            PauliCode::Identity => {
+                *self = PauliCode::with_pauli(idx, pauli);
+            }
+            PauliCode::Product(tree) => {
+                tree.insert(idx, pauli);
+            }
+        }
         self
     }
 }
 
-impl From<&[Pauli]> for PauliCode {
-    fn from(value: &[Pauli]) -> Self {
+impl<I, K> From<I> for PauliCode<K>
+where
+    I: IntoIterator<Item = (K, Pauli)>,
+    K: Ord,
+{
+    fn from(value: I) -> Self {
         let mut code = PauliCode::new();
-        for (i, pauli) in value.iter().enumerate() {
-            code.0.insert(i as u32, *pauli);
+        for (idx, pauli) in value {
+            code.update(idx, pauli);
         }
         code
     }
@@ -192,6 +258,7 @@ impl<T, K> Hamil<T, K>
 where
     K: Hash + Eq,
 {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             terms: HashMap::new(),
@@ -224,183 +291,144 @@ where
     }
 }
 
-pub type FermiHamil<T> = Hamil<T, FermiCode>;
-pub type PauliHamil<T> = Hamil<T, PauliCode>;
+pub type FermiHamil<T, K> = Hamil<T, FermiCode<K>>;
+pub type PauliHamil<T, K> = Hamil<T, PauliCode<K>>;
 
-impl<T> From<FermiHamil<T>> for PauliHamil<T>
+impl<T, K> From<FermiHamil<T, K>> for PauliHamil<T, K>
 where
     T: Float + AddAssign,
+    K: Copy + Hash + Num + Ord + Step,
 {
-    fn from(hamil: FermiHamil<T>) -> Self {
-        let mut pauli_hamil = PauliHamil::new();
-        for (code, value) in hamil.terms {
-            match code {
+    fn from(fermi_hamil: FermiHamil<T, K>) -> Self {
+        let mut hamil = PauliHamil::new();
+        for (fermi_code, value) in fermi_hamil.terms {
+            match fermi_code {
                 FermiCode::One {
                     cr,
                     an,
                 } => {
-                    let (p, q) = (cr.h(), an.h());
+                    let (p, q) = (cr.enumerate(), an.enumerate());
                     let half = T::from(0.5).unwrap();
                     if p == q {
-                        pauli_hamil.add(
-                            PauliCode::with_pauli(p, Pauli::I),
-                            value * half,
-                        );
-                        pauli_hamil.add(
+                        hamil.add(PauliCode::Identity, value * half);
+                        hamil.add(
                             PauliCode::with_pauli(q, Pauli::Z),
                             value * -half,
                         );
                     } else {
                         // canonical ordering means p<=q
-                        let mut pauli_code = PauliCode::new();
-                        pauli_code.update(p, Pauli::X).update(q, Pauli::X);
-                        for i in p + 1..q - 1 {
-                            pauli_code.update(i, Pauli::Z);
-                        }
-                        pauli_hamil.add(pauli_code, value * half);
-
-                        let mut pauli_code = PauliCode::new();
-                        pauli_code.update(p, Pauli::Y).update(q, Pauli::Y);
-                        for i in p + 1..q - 1 {
-                            pauli_code.update(i, Pauli::Z);
-                        }
-                        pauli_hamil.add(pauli_code, value * half)
+                        let mut code = PauliCode::from(
+                            (p + K::one()..q - K::one()).map(|i| (i, Pauli::Z)),
+                        );
+                        code.update(p, Pauli::X).update(q, Pauli::X);
+                        hamil.add(code.clone(), value * half);
+                        code.update(p, Pauli::Y).update(q, Pauli::Y);
+                        hamil.add(code, value * half);
                     }
                 }
                 FermiCode::Two {
                     cr,
                     an,
                 } => {
-                    let (p, q, r, s) = (cr.0.h(), cr.1.h(), an.0.h(), an.1.h());
+                    let (p, q, r, s) = (
+                        cr.0.enumerate(),
+                        cr.1.enumerate(),
+                        an.0.enumerate(),
+                        an.1.enumerate(),
+                    );
                     let quarter = T::from(0.25).unwrap();
 
                     if p == s && q == r {
                         // canonical ordering means q>p
-                        pauli_hamil.add(
-                            PauliCode::with_pauli(p, Pauli::I),
-                            value * quarter,
-                        );
-                        pauli_hamil.add(
+                        hamil.add(PauliCode::Identity, value * quarter);
+                        hamil.add(
                             PauliCode::with_pauli(p, Pauli::Z),
                             value * -quarter,
                         );
-                        pauli_hamil.add(
+                        hamil.add(
                             PauliCode::with_pauli(q, Pauli::Z),
                             value * -quarter,
                         );
-                        let mut pauli_code = PauliCode::new();
-                        pauli_code.update(p, Pauli::Z).update(q, Pauli::Z);
-                        pauli_hamil.add(pauli_code, value * quarter);
+                        hamil.add(
+                            PauliCode::from([(p, Pauli::Z), (q, Pauli::Z)]),
+                            value * quarter,
+                        );
                     } else if q == r {
-                        let mut pauli_code = PauliCode::new();
-                        for i in p + 1..s - 1 {
-                            pauli_code.update(i, Pauli::Z);
-                        }
-                        pauli_code.update(p, Pauli::X).update(s, Pauli::X);
-                        pauli_hamil.add(pauli_code, value * quarter);
+                        let mut code = PauliCode::from(
+                            (p + K::one()..s - K::one()).map(|i| (i, Pauli::Z)),
+                        );
+                        code.update(p, Pauli::X).update(s, Pauli::X);
+                        hamil.add(code.clone(), value * quarter);
+                        code.update(p, Pauli::Y).update(s, Pauli::Y);
+                        hamil.add(code.clone(), value * quarter);
 
-                        let mut pauli_code = PauliCode::new();
-                        for i in p + 1..s - 1 {
-                            pauli_code.update(i, Pauli::Z);
-                        }
-                        pauli_code.update(p, Pauli::X).update(s, Pauli::X);
-                        pauli_code.update(q, Pauli::Z);
-                        pauli_hamil.add(pauli_code, value * -quarter);
-
-                        let mut pauli_code = PauliCode::new();
-                        for i in p + 1..s - 1 {
-                            pauli_code.update(i, Pauli::Z);
-                        }
-                        pauli_code.update(p, Pauli::Y).update(s, Pauli::Y);
-                        pauli_hamil.add(pauli_code, value * quarter);
-
-                        let mut pauli_code = PauliCode::new();
-                        for i in p + 1..s - 1 {
-                            pauli_code.update(i, Pauli::Z);
-                        }
-                        pauli_code.update(p, Pauli::Y).update(s, Pauli::Y);
-                        pauli_code.update(q, Pauli::Z);
-                        pauli_hamil.add(pauli_code, value * -quarter);
+                        code.update(q, Pauli::Z);
+                        code.update(p, Pauli::X).update(s, Pauli::X);
+                        hamil.add(code.clone(), value * -quarter);
+                        code.update(p, Pauli::Y).update(s, Pauli::Y);
+                        hamil.add(code, value * -quarter);
                     } else {
                         let eighth = quarter / (T::one() + T::one());
-                        let pc = {
-                            let mut pc = PauliCode::new();
-                            for i in p + 1..q - 1 {
-                                pc.update(i, Pauli::Z);
-                            }
-                            for i in s + 1..r - 1 {
-                                pc.update(i, Pauli::Z);
-                            }
-                            pc
-                        };
 
-                        let mut pauli_code = pc.clone();
-                        pauli_code
-                            .update(p, Pauli::X)
+                        let mut code = PauliCode::new();
+                        for i in p + K::one()..q - K::one() {
+                            code.update(i, Pauli::Z);
+                        }
+                        for i in s + K::one()..r - K::one() {
+                            code.update(i, Pauli::Z);
+                        }
+
+                        code.update(p, Pauli::X)
                             .update(q, Pauli::X)
                             .update(r, Pauli::X)
                             .update(s, Pauli::X);
-                        pauli_hamil.add(pauli_code, eighth);
+                        hamil.add(code.clone(), eighth);
 
-                        let mut pauli_code = pc.clone();
-                        pauli_code
-                            .update(p, Pauli::X)
+                        code.update(p, Pauli::X)
                             .update(q, Pauli::X)
                             .update(r, Pauli::Y)
                             .update(s, Pauli::Y);
-                        pauli_hamil.add(pauli_code, -eighth);
+                        hamil.add(code.clone(), -eighth);
 
-                        let mut pauli_code = pc.clone();
-                        pauli_code
-                            .update(p, Pauli::X)
+                        code.update(p, Pauli::X)
                             .update(q, Pauli::Y)
                             .update(r, Pauli::X)
                             .update(s, Pauli::Y);
-                        pauli_hamil.add(pauli_code, eighth);
+                        hamil.add(code.clone(), eighth);
 
-                        let mut pauli_code = pc.clone();
-                        pauli_code
-                            .update(p, Pauli::Y)
+                        code.update(p, Pauli::Y)
                             .update(q, Pauli::X)
                             .update(r, Pauli::X)
                             .update(s, Pauli::Y);
-                        pauli_hamil.add(pauli_code, eighth);
+                        hamil.add(code.clone(), eighth);
 
-                        let mut pauli_code = pc.clone();
-                        pauli_code
-                            .update(p, Pauli::Y)
+                        code.update(p, Pauli::Y)
                             .update(q, Pauli::X)
                             .update(r, Pauli::Y)
                             .update(s, Pauli::X);
-                        pauli_hamil.add(pauli_code, eighth);
+                        hamil.add(code.clone(), eighth);
 
-                        let mut pauli_code = pc.clone();
-                        pauli_code
-                            .update(p, Pauli::Y)
+                        code.update(p, Pauli::Y)
                             .update(q, Pauli::Y)
                             .update(r, Pauli::X)
                             .update(s, Pauli::X);
-                        pauli_hamil.add(pauli_code, -eighth);
+                        hamil.add(code.clone(), -eighth);
 
-                        let mut pauli_code = pc.clone();
-                        pauli_code
-                            .update(p, Pauli::X)
+                        code.update(p, Pauli::X)
                             .update(q, Pauli::Y)
                             .update(r, Pauli::Y)
                             .update(s, Pauli::X);
-                        pauli_hamil.add(pauli_code, eighth);
+                        hamil.add(code.clone(), eighth);
 
-                        let mut pauli_code = pc;
-                        pauli_code
-                            .update(p, Pauli::Y)
+                        code.update(p, Pauli::Y)
                             .update(q, Pauli::Y)
                             .update(r, Pauli::Y)
                             .update(s, Pauli::Y);
-                        pauli_hamil.add(pauli_code, eighth);
+                        hamil.add(code, eighth);
                     }
                 }
             }
         }
-        pauli_hamil
+        hamil
     }
 }

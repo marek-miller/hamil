@@ -121,19 +121,6 @@ where
     }
 }
 
-// impl<S, T, K> Terms<T, K> for Box<[S]>
-// where
-//     S: Terms<T, K>,
-//     T: Float,
-//     K: Code,
-// {
-//     fn add_to(
-//         &mut self,
-//         repr: &mut SumRepr<T, K>,
-//     ) { for s in self.iter_mut() { s.add_to(repr); }
-//     }
-// }
-
 #[derive(Debug, Clone)]
 pub struct TermsIter<I> {
     iter: I,

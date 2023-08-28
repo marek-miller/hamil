@@ -212,6 +212,13 @@ impl<T, K> Add for Hamil<T, K> {
 }
 
 impl<T, K> Hamil<T, K> {
+    pub fn add_hamil(
+        self,
+        other: Self,
+    ) -> Self {
+        self + other
+    }
+
     pub fn add_offset(
         self,
         value: T,

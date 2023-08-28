@@ -1,12 +1,18 @@
+#![feature(step_trait)]
+
 use std::{
     collections::HashMap,
     hash::Hash,
-    ops::AddAssign,
+    iter::Step,
+    ops::{
+        Add,
+        AddAssign,
+    },
 };
 
 use num::Num;
 
-pub trait Idx: Clone + Copy + Eq + Hash + Num + Ord {}
+pub trait Idx: Clone + Copy + Eq + Hash + Num + Ord + Step {}
 impl Idx for u8 {}
 impl Idx for u16 {}
 impl Idx for u32 {}
@@ -21,6 +27,64 @@ pub trait Code: Clone + Eq + Hash {
     const IDENTITY: Self;
 }
 
+#[derive(Debug)]
+pub struct SumRepr<T, K>
+where
+    T: Float,
+    K: Code,
+{
+    repr: HashMap<K, T>,
+}
+
+impl<T, K> SumRepr<T, K>
+where
+    T: Float,
+    K: Code,
+{
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            repr: HashMap::new(),
+        }
+    }
+
+    pub fn add(
+        &mut self,
+        code: &K,
+        value: T,
+    ) {
+        if let Some(t) = self.repr.get_mut(code) {
+            *t += value;
+        } else {
+            self.repr.insert(code.clone(), value);
+        }
+    }
+
+    pub fn insert(
+        &mut self,
+        code: K,
+        value: T,
+    ) {
+        self.repr.insert(code, value);
+    }
+
+    pub fn remove(
+        &mut self,
+        code: &K,
+    ) -> Option<T> {
+        self.repr.remove(code)
+    }
+
+    #[must_use]
+    pub fn as_map(&self) -> &HashMap<K, T> {
+        &self.repr
+    }
+
+    pub fn as_map_mut(&mut self) -> &mut HashMap<K, T> {
+        &mut self.repr
+    }
+}
+
 pub trait Terms<T, K>
 where
     T: Float,
@@ -28,9 +92,39 @@ where
 {
     fn add_to(
         &mut self,
-        repr: &mut HashMap<K, T>,
+        repr: &mut SumRepr<T, K>,
     );
 }
+
+impl<S, T, K> Terms<T, K> for Box<[S]>
+where
+    S: Terms<T, K>,
+    T: Float,
+    K: Code,
+{
+    fn add_to(
+        &mut self,
+        repr: &mut SumRepr<T, K>,
+    ) {
+        for s in self.iter_mut() {
+            s.add_to(repr);
+        }
+    }
+}
+
+// impl<I, S, T, K> Terms<T, K> for I
+// where
+//     I: Iterator<Item = S>,
+//     S: Terms<T, K>,
+//     T: Float,
+//     K: Code,
+// {
+//     fn add_to(
+//         &mut self,
+//         repr: &mut SumRepr<T, K>,
+//     ) { self.for_each(|mut s| s.add_to(repr));
+//     }
+// }
 
 pub enum Hamil<T, K> {
     Offset(T),
@@ -47,20 +141,29 @@ where
     }
 }
 
+impl<T, K> Add for Hamil<T, K> {
+    type Output = Self;
+
+    fn add(
+        self,
+        rhs: Self,
+    ) -> Self::Output {
+        Self::Sum(Box::new(self), Box::new(rhs))
+    }
+}
+
 impl<T, K> Terms<T, K> for Hamil<T, K>
 where
-    T: Float + AddAssign,
+    T: Float,
     K: Code,
 {
     fn add_to(
         &mut self,
-        repr: &mut HashMap<K, T>,
+        repr: &mut SumRepr<T, K>,
     ) {
         match self {
             Self::Offset(t) => {
-                repr.entry(K::IDENTITY)
-                    .and_modify(|coeff| *coeff += *t)
-                    .or_insert(*t);
+                repr.add(&K::IDENTITY, *t);
             }
             Self::Terms(terms) => terms.add_to(repr),
             Self::Sum(h1, h2) => {
@@ -71,14 +174,14 @@ where
     }
 }
 
-impl<T, K> From<Hamil<T, K>> for HashMap<K, T>
+impl<T, K> From<Hamil<T, K>> for SumRepr<T, K>
 where
-    T: Float + AddAssign,
+    T: Float,
     K: Code,
 {
     fn from(value: Hamil<T, K>) -> Self {
         let mut hamil = value;
-        let mut repr = HashMap::new();
+        let mut repr = SumRepr::new();
         hamil.add_to(&mut repr);
         repr
     }
@@ -182,7 +285,7 @@ mod pauli {
     }
 }
 
-pub trait Enumerate<U>
+pub trait Enum<U>
 where
     U: Idx,
 {
@@ -215,7 +318,7 @@ impl Spin {
     }
 }
 
-impl<U> Enumerate<U> for Spin
+impl<U> Enum<U> for Spin
 where
     U: Idx,
 {
@@ -266,7 +369,7 @@ impl<U> From<(U, Spin)> for Orbital<U> {
     }
 }
 
-impl<U> Enumerate<U> for Orbital<U>
+impl<U> Enum<U> for Orbital<U>
 where
     U: Idx,
 {
@@ -275,41 +378,191 @@ where
     }
 }
 
-pub struct OneElectron<U>(Orbital<U>, Orbital<U>);
+pub struct OneElectron<T, U> {
+    orbs:  (Orbital<U>, Orbital<U>),
+    value: T,
+}
 
-impl<U> OneElectron<U>
+impl<T, U> OneElectron<T, U>
 where
     U: Idx,
 {
     pub fn new(
         cr: Orbital<U>,
         an: Orbital<U>,
+        value: T,
     ) -> Option<Self> {
-        (cr.enumerate() <= an.enumerate()).then_some(Self(cr, an))
+        (cr.enumerate() <= an.enumerate()).then_some(Self {
+            orbs: (cr, an),
+            value,
+        })
     }
 }
 
-impl<I, T, U> Terms<T, PauliCode<U>> for I
+impl<T, U> Terms<T, PauliCode<U>> for OneElectron<T, U>
 where
-    I: Iterator<Item = (OneElectron<U>, T)>,
     T: Float,
     U: Idx,
 {
     fn add_to(
         &mut self,
-        repr: &mut HashMap<PauliCode<U>, T>,
+        repr: &mut SumRepr<T, PauliCode<U>>,
     ) {
         let half = T::from(0.5).unwrap();
-        for (elec, t) in self {
-            let (p, q) = (elec.0.enumerate(), elec.1.enumerate());
-            if p == q {
-                repr.entry(PauliCode::Identity)
-                    .and_modify(|coeff| *coeff += t * half)
-                    .or_insert(t * half);
-                todo!()
-            } else {
-                todo!()
+
+        let (p, q) = (self.orbs.0.enumerate(), self.orbs.1.enumerate());
+        if p == q {
+            repr.add(&PauliCode::Identity, self.value * half);
+            repr.add(&PauliCode::with_pauli(q, Pauli::Z), self.value * -half);
+        } else {
+            let mut code = PauliCode::from(
+                (p + U::one()..q - U::one()).map(|i| (i, Pauli::Z)),
+            );
+            code.update(p, Pauli::X);
+            code.update(q, Pauli::X);
+            repr.add(&code, self.value * half);
+            code.update(p, Pauli::Y);
+            code.update(q, Pauli::Y);
+            repr.add(&code, self.value * half);
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct TwoElectron<T, U> {
+    orbs:  ((Orbital<U>, Orbital<U>), (Orbital<U>, Orbital<U>)),
+    value: T,
+}
+
+impl<T, U> TwoElectron<T, U>
+where
+    U: Idx,
+{
+    pub fn new(
+        cr: (Orbital<U>, Orbital<U>),
+        an: (Orbital<U>, Orbital<U>),
+        value: T,
+    ) -> Option<Self> {
+        (cr.0.enumerate() < cr.1.enumerate()
+            && an.0.enumerate() > an.1.enumerate()
+            && cr.0.enumerate() <= an.1.enumerate())
+        .then_some(Self {
+            orbs: (cr, an),
+            value,
+        })
+    }
+}
+
+impl<T, U> Terms<T, PauliCode<U>> for TwoElectron<T, U>
+where
+    T: Float,
+    U: Idx,
+{
+    fn add_to(
+        &mut self,
+        repr: &mut SumRepr<T, PauliCode<U>>,
+    ) {
+        let (p, q, r, s) = (
+            self.orbs.0 .0.enumerate(),
+            self.orbs.0 .1.enumerate(),
+            self.orbs.1 .0.enumerate(),
+            self.orbs.1 .1.enumerate(),
+        );
+
+        if p == s && q == r {
+            let quarter = T::from(0.25).unwrap();
+
+            // canonical ordering means q>p
+            repr.add(&PauliCode::IDENTITY, self.value * quarter);
+            repr.add(
+                &PauliCode::with_pauli(p, Pauli::Z),
+                self.value * -quarter,
+            );
+            repr.add(
+                &PauliCode::with_pauli(q, Pauli::Z),
+                self.value * -quarter,
+            );
+            repr.add(
+                &PauliCode::from([(p, Pauli::Z), (q, Pauli::Z)]),
+                self.value * quarter,
+            );
+        } else if q == r {
+            let quarter = T::from(0.25).unwrap();
+            let mut code = PauliCode::from(
+                (p + U::one()..s - U::one()).map(|i| (i, Pauli::Z)),
+            );
+            code.update(p, Pauli::X);
+            code.update(s, Pauli::X);
+            repr.add(&code, self.value * quarter);
+            code.update(p, Pauli::Y);
+            code.update(s, Pauli::Y);
+            repr.add(&code, self.value * quarter);
+
+            code.update(q, Pauli::Z);
+            code.update(p, Pauli::X);
+            code.update(s, Pauli::X);
+            repr.add(&code, self.value * -quarter);
+            code.update(p, Pauli::Y);
+            code.update(s, Pauli::Y);
+            repr.add(&code, self.value * -quarter);
+        } else {
+            let eighth = T::from(0.125).unwrap();
+
+            let mut code = PauliCode::new();
+            for i in p + U::one()..q - U::one() {
+                code.update(i, Pauli::Z);
             }
+            for i in s + U::one()..r - U::one() {
+                code.update(i, Pauli::Z);
+            }
+
+            code.update(p, Pauli::X);
+            code.update(q, Pauli::X);
+            code.update(r, Pauli::X);
+            code.update(s, Pauli::X);
+            repr.add(&code, self.value * eighth);
+
+            code.update(p, Pauli::X);
+            code.update(q, Pauli::X);
+            code.update(r, Pauli::Y);
+            code.update(s, Pauli::Y);
+            repr.add(&code, self.value * -eighth);
+
+            code.update(p, Pauli::X);
+            code.update(q, Pauli::Y);
+            code.update(r, Pauli::X);
+            code.update(s, Pauli::Y);
+            repr.add(&code, self.value * eighth);
+
+            code.update(p, Pauli::Y);
+            code.update(q, Pauli::X);
+            code.update(r, Pauli::X);
+            code.update(s, Pauli::Y);
+            repr.add(&code, self.value * eighth);
+
+            code.update(p, Pauli::Y);
+            code.update(q, Pauli::X);
+            code.update(r, Pauli::Y);
+            code.update(s, Pauli::X);
+            repr.add(&code, self.value * eighth);
+
+            code.update(p, Pauli::Y);
+            code.update(q, Pauli::Y);
+            code.update(r, Pauli::X);
+            code.update(s, Pauli::X);
+            repr.add(&code, self.value * -eighth);
+
+            code.update(p, Pauli::X);
+            code.update(q, Pauli::Y);
+            code.update(r, Pauli::Y);
+            code.update(s, Pauli::X);
+            repr.add(&code, self.value * eighth);
+
+            code.update(p, Pauli::Y);
+            code.update(q, Pauli::Y);
+            code.update(r, Pauli::Y);
+            code.update(s, Pauli::Y);
+            repr.add(&code, self.value * eighth);
         }
     }
 }

@@ -22,4 +22,38 @@
 //     println!("{pauli:?}");
 // }
 
-fn main() {}
+use hamil::{
+    Hamil,
+    OneElectron,
+    Spin,
+    SumRepr,
+    Terms,
+    TwoElectron,
+};
+
+fn main() {
+    let codes = (0..2u32)
+        .map(|x| {
+            OneElectron::new(
+                (x, Spin::Down).into(),
+                (x + 1, Spin::Up).into(),
+                0.5,
+            )
+            .unwrap()
+        })
+        .collect::<Box<_>>();
+
+    let twoelec = TwoElectron::new(
+        ((0u32, Spin::Down).into(), (1, Spin::Up).into()),
+        ((1, Spin::Down).into(), (0, Spin::Up).into()),
+        0.11,
+    )
+    .unwrap();
+    let hamil = Hamil::Terms(Box::new(codes)) + Hamil::Offset(1.1);
+    let mut hamil =
+        hamil + Hamil::Offset(0.12) + Hamil::Terms(Box::new(twoelec));
+    let mut repr = SumRepr::new();
+    hamil.add_to(&mut repr);
+
+    println!("{repr:?}");
+}

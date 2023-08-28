@@ -116,7 +116,7 @@ where
         repr: &mut SumRepr<T, K>,
     ) {
         for (code, value) in self.as_map() {
-            repr.add(code, *value)
+            repr.add(code, *value);
         }
     }
 }
@@ -649,6 +649,69 @@ where
             code.update(r, Pauli::Y);
             code.update(s, Pauli::Y);
             repr.add(&code, self.value * eighth);
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum MullikenCode<U> {
+    One(U, U),
+    Two(U, U, U, U),
+}
+
+pub struct Mulliken<T, U> {
+    code:  MullikenCode<U>,
+    value: T,
+}
+
+impl<T, U> Terms<T, PauliCode<U>> for Mulliken<T, U>
+where
+    T: Float,
+    U: Idx,
+{
+    fn add_to(
+        &mut self,
+        repr: &mut SumRepr<T, PauliCode<U>>,
+    ) {
+        match self.code {
+            MullikenCode::One(i, j) => {
+                for spin in [Spin::Down, Spin::Up] {
+                    let p = Orbital::new(j, spin);
+                    let q = Orbital::new(i, spin);
+                    let mut code = OneElectron::new(p, q, self.value).unwrap();
+                    code.add_to(repr);
+                }
+            }
+            // we change from chemists' to Dirac convention here:
+            MullikenCode::Two(i, k, l, j) => {
+                use Spin::{
+                    Down,
+                    Up,
+                };
+                for (s1, s2) in [(Down, Down), (Down, Up), (Up, Down), (Up, Up)]
+                {
+                    for (is, js, ks, ls) in [
+                        (i, j, l, k),
+                        (j, i, k, l),
+                        (j, i, l, k),
+                        (k, l, i, j),
+                        (k, l, j, i),
+                        (l, k, j, i),
+                        (l, k, i, j),
+                    ] {
+                        let op = Orbital::new(is - U::one(), s1);
+                        let oq = Orbital::new(js - U::one(), s2);
+                        let or = Orbital::new(ks - U::one(), s2);
+                        let os = Orbital::new(ls - U::one(), s1);
+
+                        if let Some(mut code) =
+                            TwoElectron::new((op, oq), (or, os), self.value)
+                        {
+                            code.add_to(repr);
+                        }
+                    }
+                }
+            }
         }
     }
 }

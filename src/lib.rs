@@ -96,9 +96,8 @@ where
     );
 }
 
-impl<S, T, K> Terms<T, K> for Box<[S]>
+impl<T, K> Terms<T, K> for SumRepr<T, K>
 where
-    S: Terms<T, K>,
     T: Float,
     K: Code,
 {
@@ -106,15 +105,14 @@ where
         &mut self,
         repr: &mut SumRepr<T, K>,
     ) {
-        for s in self.iter_mut() {
-            s.add_to(repr);
+        for (code, value) in self.as_map() {
+            repr.add(code, *value)
         }
     }
 }
 
-// impl<I, S, T, K> Terms<T, K> for I
+// impl<S, T, K> Terms<T, K> for Box<[S]>
 // where
-//     I: Iterator<Item = S>,
 //     S: Terms<T, K>,
 //     T: Float,
 //     K: Code,
@@ -122,14 +120,65 @@ where
 //     fn add_to(
 //         &mut self,
 //         repr: &mut SumRepr<T, K>,
-//     ) { self.for_each(|mut s| s.add_to(repr));
+//     ) { for s in self.iter_mut() { s.add_to(repr); }
 //     }
 // }
 
+#[derive(Debug, Clone)]
+pub struct TermsIter<I> {
+    iter: I,
+}
+
+impl<I> TermsIter<I>
+where
+    I: Iterator + Clone,
+{
+    pub fn new(iter: I) -> Self {
+        Self {
+            iter,
+        }
+    }
+}
+
+impl<I, T, K> Terms<T, K> for TermsIter<I>
+where
+    I: Iterator + Clone,
+    I::Item: Terms<T, K>,
+    T: Float,
+    K: Code,
+{
+    fn add_to(
+        &mut self,
+        repr: &mut SumRepr<T, K>,
+    ) {
+        self.iter.clone().for_each(|mut s| s.add_to(repr));
+    }
+}
+
+pub trait TermsIterator<T, K>: Sized + Iterator + Clone
+where
+    <Self as Iterator>::Item: Terms<T, K>,
+    T: Float,
+    K: Code,
+{
+    fn into_terms(self) -> TermsIter<Self> {
+        TermsIter::new(self)
+    }
+}
+
+impl<T, K, I> TermsIterator<T, K> for I
+where
+    I: Iterator + Clone + Sized,
+    I::Item: Terms<T, K>,
+    T: Float,
+    K: Code,
+{
+}
+
 pub enum Hamil<T, K> {
     Offset(T),
-    Terms(Box<dyn Terms<T, K>>),
     Sum(Box<Self>, Box<Self>),
+    Terms(Box<dyn Terms<T, K>>),
 }
 
 impl<T, K> Default for Hamil<T, K>

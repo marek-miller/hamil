@@ -28,11 +28,12 @@ use hamil::{
     Spin,
     SumRepr,
     Terms,
+    TermsIterator,
     TwoElectron,
 };
 
 fn main() {
-    let codes = (0..2u32)
+    let codes = (0..22u32)
         .map(|x| {
             OneElectron::new(
                 (x, Spin::Down).into(),
@@ -41,7 +42,7 @@ fn main() {
             )
             .unwrap()
         })
-        .collect::<Box<_>>();
+        .into_terms();
 
     let twoelec = TwoElectron::new(
         ((0u32, Spin::Down).into(), (1, Spin::Up).into()),
@@ -49,7 +50,8 @@ fn main() {
         0.11,
     )
     .unwrap();
-    let hamil = Hamil::Terms(Box::new(codes)) + Hamil::Offset(1.1);
+
+    let hamil = Hamil::Terms(Box::new(codes.clone())) + Hamil::Offset(1.1);
     let mut hamil =
         hamil + Hamil::Offset(0.12) + Hamil::Terms(Box::new(twoelec));
     let mut repr = SumRepr::new();

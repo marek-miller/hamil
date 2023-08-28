@@ -36,6 +36,16 @@ where
     repr: HashMap<K, T>,
 }
 
+impl<T, K> Default for SumRepr<T, K>
+where
+    T: Float,
+    K: Code,
+{
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T, K> SumRepr<T, K>
 where
     T: Float,
@@ -198,6 +208,26 @@ impl<T, K> Add for Hamil<T, K> {
         rhs: Self,
     ) -> Self::Output {
         Self::Sum(Box::new(self), Box::new(rhs))
+    }
+}
+
+impl<T, K> Hamil<T, K> {
+    pub fn add_offset(
+        self,
+        value: T,
+    ) -> Self {
+        self + Self::Offset(value)
+    }
+
+    pub fn add_terms(
+        self,
+        terms: Box<dyn Terms<T, K>>,
+    ) -> Self
+    where
+        T: Float,
+        K: Code,
+    {
+        self + Self::Terms(terms)
     }
 }
 

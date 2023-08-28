@@ -33,7 +33,7 @@ use hamil::{
 };
 
 fn main() {
-    let codes = (0..22u32)
+    let codes = (0..2u32)
         .map(|x| {
             OneElectron::new(
                 (x, Spin::Down).into(),
@@ -52,8 +52,7 @@ fn main() {
     .unwrap();
 
     let hamil = Hamil::Terms(Box::new(codes.clone())) + Hamil::Offset(1.1);
-    let mut hamil =
-        hamil + Hamil::Offset(0.12) + Hamil::Terms(Box::new(twoelec));
+    let mut hamil = hamil.add_offset(0.12).add_terms(Box::new(twoelec));
     let mut repr = SumRepr::new();
     hamil.add_to(&mut repr);
 

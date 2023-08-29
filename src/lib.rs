@@ -27,7 +27,7 @@ pub trait Code: Clone + Eq + Hash {
     const IDENTITY: Self;
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct SumRepr<T, K>
 where
     T: Float,
@@ -112,20 +112,6 @@ where
     }
 }
 
-// impl<I, S, T, K> Terms<T, K> for I
-// where
-//     I: Iterator<Item = S>,
-//     S: Terms<T, K>,
-//     T: Float,
-//     K: Code,
-// {
-//     fn add_to(
-//         &mut self,
-//         repr: &mut SumRepr<T, K>,
-//     ) { self.for_each(|mut s| s.add_to(repr));
-//     }
-// }
-
 pub enum Hamil<T, K> {
     Offset(T),
     Terms(Box<dyn Terms<T, K>>),
@@ -191,6 +177,10 @@ pub use pauli::{
     Pauli,
     PauliCode,
     PauliProduct,
+};
+use serde::{
+    Deserialize,
+    Serialize,
 };
 
 mod pauli {

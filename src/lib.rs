@@ -27,7 +27,7 @@ pub trait Code: Clone + Eq + Hash {
     const IDENTITY: Self;
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct SumRepr<T, K>
 where
     T: Float,
@@ -264,6 +264,10 @@ pub use pauli::{
     Pauli,
     PauliCode,
     PauliProduct,
+};
+use serde::{
+    Deserialize,
+    Serialize,
 };
 
 mod pauli {
